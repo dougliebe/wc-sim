@@ -7,7 +7,7 @@ from flask import Flask, jsonify, render_template, request
 from data.elos import ELOS
 from data.results import RESULTS
 from src.groups import GROUPS
-from src.bracket import R32_SLOT_OPPONENTS
+from src.bracket import R32_SLOT_OPPONENTS, R32_SLOT_GROUPS
 from src.viz import (
     all_groups_advancement_probs,
     recompute_group_advancement,
@@ -72,6 +72,7 @@ def api_group(letter: str):
         "ranked": ranked,
         "tiebreak_reasons": reasons,
         "slot_opponents": R32_SLOT_OPPONENTS,
+        "slot_groups": R32_SLOT_GROUPS,
     })
 
 
@@ -109,12 +110,13 @@ def api_simulate(letter: str):
         group_adv_overview[grp] = {t: adv_all[t] for t in grp_teams}
 
     return jsonify({
-        "adv": adv_all,  # full 48-team dict for selected group display
-        "group_adv_overview": group_adv_overview,  # keyed by group letter for card updates
+        "adv": adv_all,
+        "group_adv_overview": group_adv_overview,
         "ranked": ranked,
         "tiebreak_reasons": reasons,
         "standings": standings,
         "slot_opponents": R32_SLOT_OPPONENTS,
+        "slot_groups": R32_SLOT_GROUPS,
     })
 
 

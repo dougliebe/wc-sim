@@ -4,6 +4,7 @@ let overviewData = {};
 let activeGroup = null;
 let detailData = {};
 let slotOpponents = {};
+let slotGroups = {};  // slot_id (str) -> group_letter
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 async function init() {
@@ -94,6 +95,7 @@ async function openGroup(letter) {
   const res = await fetch(`/api/group/${letter}`);
   detailData = await res.json();
   slotOpponents = detailData.slot_opponents || {};
+  slotGroups = detailData.slot_groups || slotGroups;
   renderDetail(detailData);
 }
 
@@ -184,20 +186,25 @@ function renderStandings(ranked, reasons, adv) {
     const advClass = advPct >= 80 ? 'adv-green' : advPct >= 40 ? 'adv-yellow' : 'adv-red';
     const reason = reasons[s.team] ? `<span class="tiebreak-tag">${reasons[s.team]}</span>` : '';
 
-    // R32 slot breakdown for teams with non-zero r32_slots
+    // R32 opponent breakdown: P(facing team T) = Σ_slots P(slot s) × P(T finishes 1st in slot s's group)
     let slotHtml = '';
     const slots = a.r32_slots || {};
-    const slotEntries = Object.entries(slots).sort((x, y) => y[1] - x[1]);
-    if (slotEntries.length > 0) {
-      const parts = slotEntries
-        .filter(([, p]) => p > 0.001)
-        .map(([sid, p]) => {
-          const opp = slotOpponents[sid] || `Slot ${sid}`;
-          return `${opp} (${Math.round(p * 100)}%)`;
-        });
-      if (parts.length) {
-        slotHtml = `<div class="slot-breakdown">${parts.join(' · ')}</div>`;
+    const opponentProbs = {};
+    for (const [sid, slotProb] of Object.entries(slots)) {
+      if (slotProb < 0.001) continue;
+      const oppGroup = slotGroups[sid];
+      if (!oppGroup || !overviewData[oppGroup]) continue;
+      for (const [oppTeam, oppAdv] of Object.entries(overviewData[oppGroup].adv)) {
+        const p = slotProb * (oppAdv.pos['1st'] || 0);
+        opponentProbs[oppTeam] = (opponentProbs[oppTeam] || 0) + p;
       }
+    }
+    const oppParts = Object.entries(opponentProbs)
+      .sort((a, b) => b[1] - a[1])
+      .filter(([, p]) => p > 0.005)
+      .map(([team, p]) => `${team} (${Math.round(p * 100)}%)`);
+    if (oppParts.length) {
+      slotHtml = `<div class="slot-breakdown">${oppParts.join(' · ')}</div>`;
     }
 
     html += `<tr>
@@ -281,6 +288,7 @@ async function simulate() {
     });
     const data = await res.json();
     slotOpponents = data.slot_opponents || slotOpponents;
+    slotGroups = data.slot_groups || slotGroups;
 
     // data.adv has updated adv for all 48 teams; extract just the active group for the detail panel
     const activeAdv = {};

@@ -56,17 +56,15 @@ QF_PAIRS   = [(0,1),(2,3),(4,5),(6,7)]   # indices into R16 results
 SF_PAIRS   = [(0,1),(2,3)]               # indices into QF results
 FINAL_PAIR = (0, 1)                      # indices into SF results
 
-# Human-readable opponent for each 3rd-place R32 slot
-R32_SLOT_OPPONENTS = {
-    1:  "vs 1st Group E",
-    2:  "vs 1st Group I",
-    7:  "vs 1st Group D",
-    8:  "vs 1st Group G",
-    11: "vs 1st Group A",
-    12: "vs 1st Group L",
-    15: "vs 1st Group B",
-    16: "vs 1st Group K",
+# Group letter that each 3rd-place R32 slot faces (the 1st-place team of that group)
+# String keys to match JSON serialization of r32_slots
+R32_SLOT_GROUPS = {
+    "1": "E", "2": "I", "7":  "D", "8":  "G",
+    "11": "A", "12": "L", "15": "B", "16": "K",
 }
+
+# Keep for backwards compat
+R32_SLOT_OPPONENTS = {int(k): f"vs 1st Group {v}" for k, v in R32_SLOT_GROUPS.items()}
 
 
 def assign_third_place(advancing_8: list[dict], group_finishers: dict) -> dict:
