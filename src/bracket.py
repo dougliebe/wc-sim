@@ -73,34 +73,50 @@ def assign_third_place(advancing_8: list[dict], group_finishers: dict) -> dict:
     """
     Assign the 8 advancing third-place teams to the 8 third-place slots in R32.
     Each slot has a set of eligible groups; a team from that group fills the slot.
-    Ensures no same-group collisions by matching group letters.
+
+    Uses backtracking to guarantee a valid assignment (greedy fails for ~68% of
+    the 495 possible qualifying-group combinations). The full official Annex C
+    lookup table (495 entries) was not available, so this solves the CSP directly.
 
     advancing_8: list of dicts with 'group_letter' and 'team'
     group_finishers: dict group -> {1: team, 2: team, 3: team, 4: team}
-    Returns dict: match_id -> (team_a, team_b)
+    Returns dict: slot_id -> team_name
     """
-    # Build map: group_letter -> third-place team name
     third_by_group = {t["group_letter"]: t["team"] for t in advancing_8}
     advancing_letters = set(third_by_group.keys())
 
-    # For each slot needing a 3rd-place team, find which advancing group is eligible
-    assignments = {}  # match_id -> third_place_team
-    used = set()
-
-    # Sort slots by eligibility set size (most constrained first)
     third_slots = [s for s in R32_SLOTS if s["eligible_3rd"] is not None]
-    third_slots_sorted = sorted(third_slots, key=lambda s: len(s["eligible_3rd"] & advancing_letters))
+    # Order most-constrained first to prune early
+    third_slots_ordered = sorted(
+        third_slots,
+        key=lambda s: len(s["eligible_3rd"] & advancing_letters),
+    )
+    slot_ids = [s["id"] for s in third_slots_ordered]
+    eligibles = [sorted(s["eligible_3rd"] & advancing_letters) for s in third_slots_ordered]
 
-    for slot in third_slots_sorted:
-        eligible = slot["eligible_3rd"] & advancing_letters - used
-        if not eligible:
-            # Fallback: any unused advancing team
-            eligible = advancing_letters - used
-        chosen_group = sorted(eligible)[0]  # deterministic choice
-        assignments[slot["id"]] = third_by_group[chosen_group]
-        used.add(chosen_group)
+    assignment = {}  # slot_id -> group_letter
+    used: set[str] = set()
 
-    return assignments
+    def backtrack(idx: int) -> bool:
+        if idx == len(slot_ids):
+            return True
+        sid = slot_ids[idx]
+        for g in eligibles[idx]:
+            if g not in used:
+                assignment[sid] = g
+                used.add(g)
+                if backtrack(idx + 1):
+                    return True
+                used.discard(g)
+                del assignment[sid]
+        return False
+
+    if not backtrack(0):
+        raise RuntimeError(
+            f"No valid Annex C assignment for advancing groups: {sorted(advancing_letters)}"
+        )
+
+    return {sid: third_by_group[g] for sid, g in assignment.items()}
 
 
 def build_r32_matchups(group_finishers: dict, third_assignments: dict) -> list[tuple[str, str]]:
