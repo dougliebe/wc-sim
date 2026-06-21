@@ -46,7 +46,7 @@ RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     # --- Group H (matchday 1 + Spain vs Saudi Arabia) ---
     ("Spain", "Cabo Verde"):        (0, 0),  # Jun 15
     ("Saudi Arabia", "Uruguay"):    (1, 1),  # Jun 15
-    ("Spain", "Saudi Arabia"):      (0, 1),  # Jun 21
+    ("Spain", "Saudi Arabia"):      (4, 0),  # Jun 21
 
     # --- Group I (matchday 1 only; matchday 2 on Jun 22) ---
     ("France", "Senegal"):          (3, 1),  # Jun 16
