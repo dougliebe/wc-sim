@@ -207,7 +207,7 @@ def all_groups_advancement_probs(
     known_results: dict,
     elos: dict,
     n: int = 20_000,
-) -> dict[str, dict]:
+) -> tuple[dict[str, dict], list[list[dict]]]:
     """
     Run N full group-stage simulations (all 12 groups simultaneously) and compute:
       - P(finish 1st/2nd/3rd/4th) within group
@@ -215,16 +215,20 @@ def all_groups_advancement_probs(
       - P(advance | finish 3rd)
       - R32 slot distribution for 3rd-place teams (which opponent they'd face)
 
-    Returns {team: {pos, advance, third_advance, r32_slots}} for all 48 teams.
-    r32_slots: {slot_id_str: fraction} — only meaningful for teams that can finish 3rd.
+    Returns:
+      (result, third_entry_cache)
+      result: {team: {pos, advance, third_advance, r32_slots}} for all 48 teams
+      third_entry_cache: list of n lists, each with 12 third-place team dicts
+        (used by recompute_group_advancement to avoid re-running other groups)
     """
     rng = np.random.default_rng()
     all_teams = [t for teams in GROUPS.values() for t in teams]
 
-    pos_counts = {t: [0, 0, 0, 0] for t in all_teams}       # [1st,2nd,3rd,4th]
+    pos_counts = {t: [0, 0, 0, 0] for t in all_teams}
     advance_counts = {t: 0 for t in all_teams}
-    third_counts = {t: 0 for t in all_teams}                 # sims where team finished 3rd
-    slot_counts = {t: {} for t in all_teams}                 # {slot_id: count}
+    third_counts = {t: 0 for t in all_teams}
+    slot_counts = {t: {} for t in all_teams}
+    third_entry_cache: list[list[dict]] = []
 
     for _ in range(n):
         group_results = simulate_all_groups(GROUPS, elos, rng, known_results)
@@ -236,13 +240,14 @@ def all_groups_advancement_probs(
             group_finishers[letter] = {i + 1: ranked[i]["team"] for i in range(4)}
             for pos, entry in enumerate(ranked):
                 pos_counts[entry["team"]][pos] += 1
-                if pos < 2:  # 1st or 2nd always advance
+                if pos < 2:
                     advance_counts[entry["team"]] += 1
-            # Collect 3rd-place entry for cross-group ranking
             third_entry = ranked[2].copy()
             third_entry["group_letter"] = letter
             third_place_entries.append(third_entry)
             third_counts[ranked[2]["team"]] += 1
+
+        third_entry_cache.append(third_place_entries)
 
         advancing_8, _ = select_third_place(third_place_entries)
         advancing_set = {t["team"] for t in advancing_8}
@@ -250,16 +255,124 @@ def all_groups_advancement_probs(
         for team in advancing_set:
             advance_counts[team] += 1
 
-        # Annex C slot assignment for advancing 3rd-place teams
         try:
             third_assignments = assign_third_place(advancing_8, group_finishers)
             for slot_id, team in third_assignments.items():
                 slot_counts[team][slot_id] = slot_counts[team].get(slot_id, 0) + 1
         except Exception:
-            pass  # rare edge case in assignment; skip slot tracking for this sim
+            pass
 
     result = {}
     for team in all_teams:
+        tc = third_counts[team]
+        adv = advance_counts[team]
+        result[team] = {
+            "pos": {
+                "1st": pos_counts[team][0] / n,
+                "2nd": pos_counts[team][1] / n,
+                "3rd": pos_counts[team][2] / n,
+                "4th": pos_counts[team][3] / n,
+            },
+            "advance": adv / n,
+            "third_advance": (adv - pos_counts[team][0] - pos_counts[team][1]) / tc if tc > 0 else 0.0,
+            "r32_slots": {
+                str(sid): cnt / n
+                for sid, cnt in slot_counts[team].items()
+            },
+        }
+    return result, third_entry_cache
+
+
+def recompute_group_advancement(
+    letter: str,
+    known_results: dict,
+    elos: dict,
+    third_entry_cache: list[list[dict]],
+    n: int = 20_000,
+) -> dict[str, dict]:
+    """
+    Recompute advancement probabilities for one group using hypothetical scores,
+    without re-simulating the other 11 groups.
+
+    For each of the n cached sims, the other 11 groups' third-place entries are
+    reused verbatim; only group `letter` is re-simulated. This gives correct
+    cross-group 3rd-place advancement stats at ~12× the speed of a full re-run.
+
+    Returns {team: {pos, advance, third_advance, r32_slots}} for the 4 teams in
+    the group.
+    """
+    teams = GROUPS[letter]
+    pairs = [(teams[i], teams[j]) for i, j in _PAIR_INDICES]
+
+    unknown_pairs = [
+        (a, b) for a, b in pairs
+        if (a, b) not in known_results and (b, a) not in known_results
+    ]
+    known_scores: dict = {}
+    for a, b in pairs:
+        if (a, b) in known_results:
+            known_scores[(a, b)] = known_results[(a, b)]
+        elif (b, a) in known_results:
+            gb, ga = known_results[(b, a)]
+            known_scores[(a, b)] = (ga, gb)
+
+    rng = np.random.default_rng()
+    pos_counts = {t: [0, 0, 0, 0] for t in teams}
+    advance_counts = {t: 0 for t in teams}
+    third_counts = {t: 0 for t in teams}
+    slot_counts: dict[str, dict] = {t: {} for t in teams}
+
+    # Pre-simulate all unknown pairs for all n sims in one vectorized batch
+    if unknown_pairs:
+        nu = len(unknown_pairs)
+        all_sim_scores = simulate_group_matches_vectorized(unknown_pairs * n, elos, rng)
+    else:
+        nu = 0
+        all_sim_scores = []
+
+    for sim_i in range(n):
+        # Build this sim's scorelines
+        if unknown_pairs:
+            sim_scores = dict(known_scores)
+            for pi, (a, b) in enumerate(unknown_pairs):
+                sim_scores[(a, b)] = all_sim_scores[sim_i * nu + pi]
+            ranked = _tally_and_rank(
+                teams, pairs,
+                [sim_scores.get((a, b), sim_scores.get((b, a), (0, 0))) for a, b in pairs],
+            )
+        else:
+            ranked, _ = resolve_with_scores(letter, known_scores)
+
+        for pos, entry in enumerate(ranked):
+            pos_counts[entry["team"]][pos] += 1
+            if pos < 2:
+                advance_counts[entry["team"]] += 1
+
+        third_team = ranked[2]["team"]
+        third_counts[third_team] += 1
+        new_third_entry = ranked[2].copy()
+        new_third_entry["group_letter"] = letter
+
+        # Cross-join: other 11 groups from cache + this group's new 3rd-place entry
+        cached_others = [e for e in third_entry_cache[sim_i] if e["group_letter"] != letter]
+        all_12 = cached_others + [new_third_entry]
+
+        advancing_8, _ = select_third_place(all_12)
+        advancing_set = {t["team"] for t in advancing_8}
+
+        if third_team in advancing_set:
+            advance_counts[third_team] += 1
+
+        try:
+            third_assignments = assign_third_place(advancing_8, {})
+            for slot_id, team in third_assignments.items():
+                if team in slot_counts:
+                    slot_counts[team][slot_id] = slot_counts[team].get(slot_id, 0) + 1
+        except Exception:
+            pass
+
+    result = {}
+    for team in teams:
         tc = third_counts[team]
         adv = advance_counts[team]
         result[team] = {

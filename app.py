@@ -10,6 +10,7 @@ from src.groups import GROUPS
 from src.bracket import R32_SLOT_OPPONENTS
 from src.viz import (
     all_groups_advancement_probs,
+    recompute_group_advancement,
     current_standings,
     group_matches,
     resolve_with_scores,
@@ -18,12 +19,13 @@ from src.viz import (
 app = Flask(__name__)
 
 # ── cache on startup (all 12 groups, 20k sims, ~3-5s) ────────────────────────
-_adv_cache: dict = {}   # team -> {pos, advance, third_advance, r32_slots}
-_overview_cache: dict = {}  # letter -> {standings, matches, adv_data_by_team}
+_adv_cache: dict = {}        # team -> {pos, advance, third_advance, r32_slots}
+_overview_cache: dict = {}   # letter -> {standings, matches, adv}
+_third_entry_cache: list = []  # n lists of 12 third-place dicts (for fast simulate)
 
 def _build_cache():
-    global _adv_cache, _overview_cache
-    _adv_cache = all_groups_advancement_probs(RESULTS, ELOS, n=20_000)
+    global _adv_cache, _overview_cache, _third_entry_cache
+    _adv_cache, _third_entry_cache = all_groups_advancement_probs(RESULTS, ELOS, n=20_000)
     cache = {}
     for letter in GROUPS:
         standings = current_standings(letter, RESULTS)
@@ -80,7 +82,7 @@ def api_simulate(letter: str):
         return jsonify({"error": "unknown group"}), 404
 
     body = request.get_json(force=True)
-    # Merge user-supplied hypothetical scores for this group into global RESULTS
+    # Merge user-supplied hypothetical scores for this group into actual results
     known = dict(RESULTS)
     for m in body.get("scores", []):
         if m["home_score"] is not None and m["away_score"] is not None:
@@ -90,9 +92,9 @@ def api_simulate(letter: str):
     group_teams = set(GROUPS[letter])
     group_known = {k: v for k, v in known.items() if k[0] in group_teams and k[1] in group_teams}
 
-    # Run all-groups sim with hypothetical scores merged in (other groups use RESULTS)
-    adv_all = all_groups_advancement_probs(known, ELOS, n=20_000)
-    adv = {t: adv_all[t] for t in GROUPS[letter]}
+    # Resimulate only this group; cross-join with cached 3rd-place entries from
+    # the other 11 groups to compute advancement probs correctly without a full re-run.
+    adv = recompute_group_advancement(letter, group_known, ELOS, _third_entry_cache, n=20_000)
 
     ranked, reasons = resolve_with_scores(letter, group_known)
     standings = current_standings(letter, group_known)
