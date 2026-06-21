@@ -3,19 +3,45 @@ import numpy as np
 from src.match import simulate_group_matches_vectorized
 
 
-# Pre-compute match order for a 4-team group (indices into team list)
-_PAIR_INDICES = list(combinations(range(4), 2))
+_PAIR_INDICES = list(combinations(range(4), 2))  # (0,1),(0,2),(0,3),(1,2),(1,3),(2,3)
 
 
-def simulate_group(teams: list[str], elos: dict[str, float], rng: np.random.Generator) -> list[dict]:
+def simulate_all_groups(
+    groups: dict[str, list[str]],
+    elos: dict[str, float],
+    rng: np.random.Generator,
+) -> dict[str, list[dict]]:
     """
-    Simulate a round-robin group of 4 teams.
-    Returns list of team stat dicts sorted 1st to 4th.
+    Simulate all groups in one vectorised batch.
+    Returns {group_letter: ranked_team_list}.
     """
-    pairs = [(teams[i], teams[j]) for i, j in _PAIR_INDICES]
-    scorelines = simulate_group_matches_vectorized(pairs, elos, rng)
+    # Collect all matches across all groups in one list
+    all_pairs: list[tuple[str, str]] = []
+    group_slices: dict[str, tuple[int, int, list[str]]] = {}
 
-    stats = {t: {"team": t, "pts": 0, "gf": 0, "ga": 0, "gd": 0} for t in teams}
+    for letter, teams in groups.items():
+        start = len(all_pairs)
+        all_pairs.extend((teams[i], teams[j]) for i, j in _PAIR_INDICES)
+        group_slices[letter] = (start, len(all_pairs), teams)
+
+    # Single vectorised call for all 72 matches
+    all_scorelines = simulate_group_matches_vectorized(all_pairs, elos, rng)
+
+    results = {}
+    for letter, (start, end, teams) in group_slices.items():
+        scorelines = all_scorelines[start:end]
+        pairs      = all_pairs[start:end]
+        results[letter] = _tally_and_rank(teams, pairs, scorelines)
+
+    return results
+
+
+def _tally_and_rank(
+    teams: list[str],
+    pairs: list[tuple[str, str]],
+    scorelines: list[tuple[int, int]],
+) -> list[dict]:
+    stats   = {t: {"team": t, "pts": 0, "gf": 0, "ga": 0, "gd": 0} for t in teams}
     results = {}
 
     for (a, b), (ga, gb) in zip(pairs, scorelines):
@@ -35,8 +61,14 @@ def simulate_group(teams: list[str], elos: dict[str, float], rng: np.random.Gene
     for t in teams:
         stats[t]["gd"] = stats[t]["gf"] - stats[t]["ga"]
 
-    ranked = _rank_group(list(stats.values()), results)
-    return ranked
+    return _rank_group(list(stats.values()), results)
+
+
+# Keep single-group entry point for compatibility / testing
+def simulate_group(teams: list[str], elos: dict[str, float], rng: np.random.Generator) -> list[dict]:
+    pairs = [(teams[i], teams[j]) for i, j in _PAIR_INDICES]
+    scorelines = simulate_group_matches_vectorized(pairs, elos, rng)
+    return _tally_and_rank(teams, pairs, scorelines)
 
 
 def _rank_group(team_stats: list[dict], results: dict) -> list[dict]:

@@ -9,7 +9,7 @@ from collections import defaultdict
 import numpy as np
 
 from data.elos import ELOS
-from src.tournament import simulate_once
+from src.tournament import simulate_once, build_tables
 
 ROUND_NAMES = {
     0: "Group Stage Exit",
@@ -26,12 +26,14 @@ ROUND_HEADERS = ["Groups", "R32", "R16", "QF", "SF", "Final", "Win"]
 
 def run(n: int, seed: int | None) -> dict[str, list[float]]:
     rng = np.random.default_rng(seed)
+    print("Building lookup tables...", file=sys.stderr)
+    tables = build_tables(ELOS)
     counts = defaultdict(lambda: [0] * 7)  # team -> [count_reached_round_0..6]
 
     for i in range(n):
         if i % 5000 == 0 and i > 0:
             print(f"  {i}/{n} simulations...", file=sys.stderr)
-        result = simulate_once(ELOS, rng)
+        result = simulate_once(ELOS, rng, tables)
         for team, round_reached in result.items():
             for r in range(round_reached + 1):
                 counts[team][r] += 1
