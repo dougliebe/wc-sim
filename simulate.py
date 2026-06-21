@@ -9,6 +9,7 @@ from collections import defaultdict
 import numpy as np
 
 from data.elos import ELOS
+from data.results import RESULTS
 from src.tournament import simulate_once, build_tables
 
 ROUND_NAMES = {
@@ -33,7 +34,7 @@ def run(n: int, seed: int | None) -> dict[str, list[float]]:
     for i in range(n):
         if i % 5000 == 0 and i > 0:
             print(f"  {i}/{n} simulations...", file=sys.stderr)
-        result = simulate_once(ELOS, rng, tables)
+        result = simulate_once(ELOS, rng, tables, RESULTS)
         for team, round_reached in result.items():
             for r in range(round_reached + 1):
                 counts[team][r] += 1

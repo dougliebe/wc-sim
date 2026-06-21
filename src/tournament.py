@@ -15,6 +15,7 @@ def simulate_once(
     elos: dict[str, float],
     rng: np.random.Generator,
     tables: dict,
+    known_results: dict[tuple[str, str], tuple[int, int]] | None = None,
 ) -> dict[str, int]:
     """
     Run one full tournament simulation.
@@ -31,7 +32,7 @@ def simulate_once(
     reached = {team: 0 for group in GROUPS.values() for team in group}
 
     # --- Group stage (all 72 matches in one vectorised batch) ---
-    group_results   = simulate_all_groups(GROUPS, elos, rng)
+    group_results   = simulate_all_groups(GROUPS, elos, rng, known_results)
     group_finishers = {}
     third_place_teams = []
 

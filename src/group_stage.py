@@ -10,28 +10,50 @@ def simulate_all_groups(
     groups: dict[str, list[str]],
     elos: dict[str, float],
     rng: np.random.Generator,
+    known_results: dict[tuple[str, str], tuple[int, int]] | None = None,
 ) -> dict[str, list[dict]]:
     """
     Simulate all groups in one vectorised batch.
+    known_results: scorelines already played, keyed by (team_a, team_b) in either order.
     Returns {group_letter: ranked_team_list}.
     """
-    # Collect all matches across all groups in one list
+    if known_results is None:
+        known_results = {}
+
+    # Collect unknown matches for vectorised simulation
     all_pairs: list[tuple[str, str]] = []
-    group_slices: dict[str, tuple[int, int, list[str]]] = {}
+    group_meta: dict[str, tuple[list[tuple[str, str]], list[int | None]]] = {}
 
     for letter, teams in groups.items():
-        start = len(all_pairs)
-        all_pairs.extend((teams[i], teams[j]) for i, j in _PAIR_INDICES)
-        group_slices[letter] = (start, len(all_pairs), teams)
+        pairs_for_group = [(teams[i], teams[j]) for i, j in _PAIR_INDICES]
+        sim_indices: list[int | None] = []
+        for pair in pairs_for_group:
+            a, b = pair
+            if (a, b) in known_results or (b, a) in known_results:
+                sim_indices.append(None)  # will use known result
+            else:
+                sim_indices.append(len(all_pairs))
+                all_pairs.append(pair)
+        group_meta[letter] = (pairs_for_group, sim_indices)
 
-    # Single vectorised call for all 72 matches
-    all_scorelines = simulate_group_matches_vectorized(all_pairs, elos, rng)
+    # Single vectorised call for all unknown matches
+    sim_scorelines = simulate_group_matches_vectorized(all_pairs, elos, rng) if all_pairs else []
 
     results = {}
-    for letter, (start, end, teams) in group_slices.items():
-        scorelines = all_scorelines[start:end]
-        pairs      = all_pairs[start:end]
-        results[letter] = _tally_and_rank(teams, pairs, scorelines)
+    for letter, teams in groups.items():
+        pairs_for_group, sim_indices = group_meta[letter]
+        scorelines: list[tuple[int, int]] = []
+        for pair, idx in zip(pairs_for_group, sim_indices):
+            if idx is None:
+                a, b = pair
+                if (a, b) in known_results:
+                    scorelines.append(known_results[(a, b)])
+                else:
+                    ga, gb = known_results[(b, a)]
+                    scorelines.append((gb, ga))
+            else:
+                scorelines.append(sim_scorelines[idx])
+        results[letter] = _tally_and_rank(teams, pairs_for_group, scorelines)
 
     return results
 
