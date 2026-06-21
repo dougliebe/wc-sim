@@ -121,6 +121,8 @@ def _break_tie(tied: list[dict], results: dict) -> list[dict]:
     h2h = {t: {"pts": 0, "gd": 0, "gf": 0} for t in teams}
     for a, b in combinations(teams, 2):
         ga, gb = _get_result(a, b, results)
+        if ga is None:
+            continue
         h2h[a]["gf"] += ga
         h2h[a]["gd"] += ga - gb
         h2h[b]["gf"] += gb
@@ -160,8 +162,10 @@ def _break_tie(tied: list[dict], results: dict) -> list[dict]:
     return result
 
 
-def _get_result(a: str, b: str, results: dict) -> tuple[int, int]:
+def _get_result(a: str, b: str, results: dict) -> tuple[int, int] | tuple[None, None]:
     if (a, b) in results:
         return results[(a, b)]
-    ga, gb = results[(b, a)]
-    return gb, ga
+    if (b, a) in results:
+        gb, ga = results[(b, a)]
+        return ga, gb
+    return None, None
