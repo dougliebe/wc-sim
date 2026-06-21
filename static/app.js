@@ -283,17 +283,37 @@ async function simulate() {
     slotOpponents = data.slot_opponents || slotOpponents;
     renderStandings(data.ranked, data.tiebreak_reasons, data.adv);
     renderDetailProbs(data.adv, data.ranked);
+
+    // Update the group card in the overview to reflect hypothetical adv probs
+    overviewData[activeGroup].adv = data.adv;
+    overviewData[activeGroup].standings = data.standings;
+    refreshGroupCard(activeGroup, data.standings, data.adv);
   } finally {
     btn.textContent = 'Simulate with these scores';
     btn.disabled = false;
   }
 }
 
+// ── Refresh group card in the overview grid ───────────────────────────────────
+function refreshGroupCard(letter, standings, adv) {
+  const card = document.querySelector(`.group-card[data-letter="${letter}"]`);
+  if (!card) return;
+  const wasActive = card.classList.contains('active');
+  const newCard = buildGroupCard(letter, standings, adv, overviewData[letter].matches);
+  if (wasActive) newCard.classList.add('active');
+  card.parentNode.replaceChild(newCard, card);
+}
+
 // ── Reset ─────────────────────────────────────────────────────────────────────
 function resetScores() {
+  const orig = overviewData[activeGroup];
   renderMatchList(detailData.matches);
   renderStandings(detailData.ranked, detailData.tiebreak_reasons, detailData.adv);
   renderDetailProbs(detailData.adv, detailData.ranked);
+  // Revert the group card to the startup probabilities
+  overviewData[activeGroup].adv = detailData.adv;
+  overviewData[activeGroup].standings = detailData.standings || orig.standings;
+  refreshGroupCard(activeGroup, overviewData[activeGroup].standings, detailData.adv);
 }
 
 // ── Go ────────────────────────────────────────────────────────────────────────
