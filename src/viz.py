@@ -69,7 +69,7 @@ def resolve_with_scores(letter: str, all_scores: dict) -> tuple[list[dict], dict
             valid_pairs.append((a, b))
         elif (b, a) in all_scores:
             gb, ga = all_scores[(b, a)]
-            scorelines.append((gb, ga))
+            scorelines.append((ga, gb))
             valid_pairs.append((a, b))
 
     ranked = _tally_and_rank(teams, valid_pairs, scorelines)
