@@ -3,6 +3,7 @@
 let overviewData = {};
 let activeGroup = null;
 let detailData = {};
+let slotOpponents = {};
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 async function init() {
@@ -18,47 +19,54 @@ function renderOverview() {
   const letters = Object.keys(overviewData).sort();
   for (const letter of letters) {
     const d = overviewData[letter];
-    const card = buildGroupCard(letter, d.standings, d.probs, d.matches);
+    const card = buildGroupCard(letter, d.standings, d.adv, d.matches);
     grid.appendChild(card);
   }
 }
 
-function buildGroupCard(letter, standings, probs, matches) {
+function buildGroupCard(letter, standings, adv, matches) {
   const card = document.createElement('div');
   card.className = 'group-card';
   card.dataset.letter = letter;
   card.addEventListener('click', () => openGroup(letter));
 
-  // Mini standings
+  // Mini standings with Adv%
   let tableHtml = `<h2>Group ${letter}</h2>
   <table class="mini-table">
-    <thead><tr><th>Team</th><th>Pts</th><th>GD</th><th>GF</th></tr></thead>
+    <thead><tr><th>Team</th><th>Pts</th><th>GD</th><th>Adv%</th></tr></thead>
     <tbody>`;
+
+  // Order by current standings position
+  const orderedTeams = standings.map(s => s.team);
   standings.forEach((s, i) => {
+    const a = adv[s.team];
+    const advPct = Math.round(a.advance * 100);
+    const advClass = advPct >= 80 ? 'adv-green' : advPct >= 40 ? 'adv-yellow' : 'adv-red';
     tableHtml += `<tr class="rank-${i+1}">
       <td>${s.team}</td>
       <td>${s.pts}</td>
       <td>${s.gd >= 0 ? '+' : ''}${s.gd}</td>
-      <td>${s.gf}</td>
+      <td><span class="adv-badge ${advClass}">${advPct}%</span></td>
     </tr>`;
   });
   tableHtml += `</tbody></table>`;
 
-  // Prob bars (stacked per team)
-  const orderedTeams = standings.map(s => s.team);
+  // Prob bars (stacked per team: 1st/2nd/3rd-adv/3rd-out/4th)
   let barsHtml = `<div class="prob-bars">`;
   for (const team of orderedTeams) {
-    const p = probs[team];
-    const topProb = Math.round(p['1st'] * 100);
+    const a = adv[team];
+    const p = a.pos;
+    const thirdAdv = p['3rd'] * a.third_advance;
+    const thirdOut = p['3rd'] * (1 - a.third_advance);
     barsHtml += `<div class="prob-row">
       <span class="prob-name">${team}</span>
       <div class="bar-track">
         <div class="bar-seg bar-1st" style="width:${p['1st']*100}%"></div>
         <div class="bar-seg bar-2nd" style="width:${p['2nd']*100}%"></div>
-        <div class="bar-seg bar-3rd" style="width:${p['3rd']*100}%"></div>
+        <div class="bar-seg bar-3rd-adv" style="width:${thirdAdv*100}%"></div>
+        <div class="bar-seg bar-3rd-out" style="width:${thirdOut*100}%"></div>
         <div class="bar-seg bar-4th" style="width:${p['4th']*100}%"></div>
       </div>
-      <span class="prob-pct">${Math.round(p['1st']*100)}%</span>
     </div>`;
   }
   barsHtml += `</div>`;
@@ -69,14 +77,12 @@ function buildGroupCard(letter, standings, probs, matches) {
 
 // ── Group Detail ──────────────────────────────────────────────────────────────
 async function openGroup(letter) {
-  // Toggle
   if (activeGroup === letter) {
     closeGroup();
     return;
   }
   activeGroup = letter;
 
-  // Mark active card
   document.querySelectorAll('.group-card').forEach(c => {
     c.classList.toggle('active', c.dataset.letter === letter);
   });
@@ -87,6 +93,7 @@ async function openGroup(letter) {
 
   const res = await fetch(`/api/group/${letter}`);
   detailData = await res.json();
+  slotOpponents = detailData.slot_opponents || {};
   renderDetail(detailData);
 }
 
@@ -98,7 +105,7 @@ function closeGroup() {
 
 function renderDetail(data) {
   const panel = document.getElementById('group-detail');
-  const { letter, matches, standings, probs, ranked, tiebreak_reasons } = data;
+  const { letter, matches, standings, adv, ranked, tiebreak_reasons } = data;
 
   panel.innerHTML = `
     <div class="detail-header">
@@ -115,21 +122,22 @@ function renderDetail(data) {
         </div>
       </div>
       <div>
-        <div class="section-title">Current Standings</div>
+        <div class="section-title">Standings &amp; Advancement</div>
         <div id="standings-container"></div>
         <div class="detail-probs" id="detail-probs"></div>
         <div class="legend">
           <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>1st</div>
           <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>2nd</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div>3rd</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div>3rd✓</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#6e4e00"></div>3rd✗</div>
           <div class="legend-item"><div class="legend-dot" style="background:#6e7681"></div>4th</div>
         </div>
       </div>
     </div>`;
 
   renderMatchList(matches);
-  renderStandings(ranked, tiebreak_reasons);
-  renderDetailProbs(probs, ranked);
+  renderStandings(ranked, tiebreak_reasons, adv);
+  renderDetailProbs(adv, ranked);
 }
 
 function renderMatchList(matches) {
@@ -164,33 +172,56 @@ function renderMatchList(matches) {
   }
 }
 
-function renderStandings(ranked, reasons) {
+function renderStandings(ranked, reasons, adv) {
   const container = document.getElementById('standings-container');
   let html = `<table class="standings-table">
-    <thead><tr><th>#</th><th>Team</th><th>Pts</th><th>GD</th><th>GF</th><th>GA</th></tr></thead>
+    <thead><tr><th>#</th><th>Team</th><th>Pts</th><th>GD</th><th>GF</th><th>Adv%</th></tr></thead>
     <tbody>`;
   ranked.forEach((s, i) => {
     const pos = i + 1;
+    const a = adv[s.team];
+    const advPct = Math.round(a.advance * 100);
+    const advClass = advPct >= 80 ? 'adv-green' : advPct >= 40 ? 'adv-yellow' : 'adv-red';
     const reason = reasons[s.team] ? `<span class="tiebreak-tag">${reasons[s.team]}</span>` : '';
+
+    // R32 slot breakdown for teams with non-zero r32_slots
+    let slotHtml = '';
+    const slots = a.r32_slots || {};
+    const slotEntries = Object.entries(slots).sort((x, y) => y[1] - x[1]);
+    if (slotEntries.length > 0) {
+      const parts = slotEntries
+        .filter(([, p]) => p > 0.001)
+        .map(([sid, p]) => {
+          const opp = slotOpponents[sid] || `Slot ${sid}`;
+          return `${opp} (${Math.round(p * 100)}%)`;
+        });
+      if (parts.length) {
+        slotHtml = `<div class="slot-breakdown">${parts.join(' · ')}</div>`;
+      }
+    }
+
     html += `<tr>
       <td><span class="pos-badge pos-${pos}">${pos}</span></td>
-      <td>${s.team}${reason}</td>
+      <td>${s.team}${reason}${slotHtml}</td>
       <td>${s.pts}</td>
       <td>${s.gd >= 0 ? '+' : ''}${s.gd}</td>
       <td>${s.gf}</td>
-      <td>${s.ga}</td>
+      <td><span class="adv-badge ${advClass}">${advPct}%</span></td>
     </tr>`;
   });
   html += `</tbody></table>`;
   container.innerHTML = html;
 }
 
-function renderDetailProbs(probs, ranked) {
+function renderDetailProbs(adv, ranked) {
   const container = document.getElementById('detail-probs');
   container.innerHTML = '<div class="section-title" style="margin-top:1.25rem">Finishing Position Probabilities</div>';
   for (const s of ranked) {
     const team = s.team;
-    const p = probs[team];
+    const a = adv[team];
+    const p = a.pos;
+    const thirdAdv = p['3rd'] * a.third_advance;
+    const thirdOut = p['3rd'] * (1 - a.third_advance);
     const row = document.createElement('div');
     row.className = 'detail-prob-row';
     row.innerHTML = `
@@ -198,7 +229,8 @@ function renderDetailProbs(probs, ranked) {
       <div class="detail-bar-track">
         <div class="bar-seg bar-1st" style="width:${p['1st']*100}%"></div>
         <div class="bar-seg bar-2nd" style="width:${p['2nd']*100}%"></div>
-        <div class="bar-seg bar-3rd" style="width:${p['3rd']*100}%"></div>
+        <div class="bar-seg bar-3rd-adv" style="width:${thirdAdv*100}%"></div>
+        <div class="bar-seg bar-3rd-out" style="width:${thirdOut*100}%"></div>
         <div class="bar-seg bar-4th" style="width:${p['4th']*100}%"></div>
       </div>
       <div class="detail-prob-pcts">
@@ -248,8 +280,9 @@ async function simulate() {
       body: JSON.stringify({ scores }),
     });
     const data = await res.json();
-    renderStandings(data.ranked, data.tiebreak_reasons);
-    renderDetailProbs(data.probs, data.ranked);
+    slotOpponents = data.slot_opponents || slotOpponents;
+    renderStandings(data.ranked, data.tiebreak_reasons, data.adv);
+    renderDetailProbs(data.adv, data.ranked);
   } finally {
     btn.textContent = 'Simulate with these scores';
     btn.disabled = false;
@@ -259,8 +292,8 @@ async function simulate() {
 // ── Reset ─────────────────────────────────────────────────────────────────────
 function resetScores() {
   renderMatchList(detailData.matches);
-  renderStandings(detailData.ranked, detailData.tiebreak_reasons);
-  renderDetailProbs(detailData.probs, detailData.ranked);
+  renderStandings(detailData.ranked, detailData.tiebreak_reasons, detailData.adv);
+  renderDetailProbs(detailData.adv, detailData.ranked);
 }
 
 // ── Go ────────────────────────────────────────────────────────────────────────
