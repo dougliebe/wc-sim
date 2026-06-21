@@ -281,13 +281,22 @@ async function simulate() {
     });
     const data = await res.json();
     slotOpponents = data.slot_opponents || slotOpponents;
-    renderStandings(data.ranked, data.tiebreak_reasons, data.adv);
-    renderDetailProbs(data.adv, data.ranked);
 
-    // Update the group card in the overview to reflect hypothetical adv probs
-    overviewData[activeGroup].adv = data.adv;
-    overviewData[activeGroup].standings = data.standings;
-    refreshGroupCard(activeGroup, data.standings, data.adv);
+    // data.adv has updated adv for all 48 teams; extract just the active group for the detail panel
+    const activeAdv = {};
+    for (const team of Object.keys(overviewData[activeGroup].adv)) {
+      activeAdv[team] = data.adv[team];
+    }
+    renderStandings(data.ranked, data.tiebreak_reasons, activeAdv);
+    renderDetailProbs(activeAdv, data.ranked);
+
+    // Refresh every group card with updated advancement probs
+    for (const [letter, grpAdv] of Object.entries(data.group_adv_overview)) {
+      overviewData[letter].adv = grpAdv;
+      const standings = letter === activeGroup ? data.standings : overviewData[letter].standings;
+      if (letter === activeGroup) overviewData[letter].standings = standings;
+      refreshGroupCard(letter, standings, grpAdv);
+    }
   } finally {
     btn.textContent = 'Simulate with these scores';
     btn.disabled = false;
@@ -305,15 +314,17 @@ function refreshGroupCard(letter, standings, adv) {
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
-function resetScores() {
-  const orig = overviewData[activeGroup];
+async function resetScores() {
   renderMatchList(detailData.matches);
   renderStandings(detailData.ranked, detailData.tiebreak_reasons, detailData.adv);
   renderDetailProbs(detailData.adv, detailData.ranked);
-  // Revert the group card to the startup probabilities
-  overviewData[activeGroup].adv = detailData.adv;
-  overviewData[activeGroup].standings = detailData.standings || orig.standings;
-  refreshGroupCard(activeGroup, overviewData[activeGroup].standings, detailData.adv);
+  // Re-fetch the full overview to restore all group cards to baseline probs
+  const res = await fetch('/api/overview');
+  const fresh = await res.json();
+  for (const [letter, d] of Object.entries(fresh)) {
+    overviewData[letter] = d;
+    refreshGroupCard(letter, d.standings, d.adv);
+  }
 }
 
 // ── Go ────────────────────────────────────────────────────────────────────────

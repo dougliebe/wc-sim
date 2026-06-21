@@ -288,18 +288,18 @@ def recompute_group_advancement(
     known_results: dict,
     elos: dict,
     third_entry_cache: list[list[dict]],
+    baseline_adv: dict,
     n: int = 20_000,
 ) -> dict[str, dict]:
     """
-    Recompute advancement probabilities for one group using hypothetical scores,
-    without re-simulating the other 11 groups.
+    Recompute advancement probabilities for all 48 teams when one group's scores
+    change hypothetically, without re-simulating the other 11 groups.
 
-    For each of the n cached sims, the other 11 groups' third-place entries are
-    reused verbatim; only group `letter` is re-simulated. This gives correct
-    cross-group 3rd-place advancement stats at ~12× the speed of a full re-run.
+    For the selected group: pos probs and advance probs are fully recomputed.
+    For other groups: pos probs are unchanged (their matches didn't change) but
+    advance probs are updated because the 3rd-place pool composition changed.
 
-    Returns {team: {pos, advance, third_advance, r32_slots}} for the 4 teams in
-    the group.
+    Returns {team: {pos, advance, third_advance, r32_slots}} for all 48 teams.
     """
     teams = GROUPS[letter]
     pairs = [(teams[i], teams[j]) for i, j in _PAIR_INDICES]
@@ -317,12 +317,15 @@ def recompute_group_advancement(
             known_scores[(a, b)] = (ga, gb)
 
     rng = np.random.default_rng()
-    pos_counts = {t: [0, 0, 0, 0] for t in teams}
-    advance_counts = {t: 0 for t in teams}
-    third_counts = {t: 0 for t in teams}
-    slot_counts: dict[str, dict] = {t: {} for t in teams}
+    all_teams = [t for grp_teams in GROUPS.values() for t in grp_teams]
 
-    # Pre-simulate all unknown pairs for all n sims in one vectorized batch
+    pos_counts = {t: [0, 0, 0, 0] for t in teams}  # only selected group
+    # For selected group: advance = P(1st) + P(2nd) + P(3rd AND top-8)
+    # For other groups:   advance_3rd = P(3rd AND top-8) — added to cached P(1st)+P(2nd) later
+    advance_counts: dict[str, int] = {t: 0 for t in all_teams}
+    third_counts: dict[str, int] = {t: 0 for t in all_teams}
+    slot_counts: dict[str, dict] = {t: {} for t in all_teams}
+
     if unknown_pairs:
         nu = len(unknown_pairs)
         all_sim_scores = simulate_group_matches_vectorized(unknown_pairs * n, elos, rng)
@@ -331,7 +334,6 @@ def recompute_group_advancement(
         all_sim_scores = []
 
     for sim_i in range(n):
-        # Build this sim's scorelines
         if unknown_pairs:
             sim_scores = dict(known_scores)
             for pi, (a, b) in enumerate(unknown_pairs):
@@ -346,49 +348,67 @@ def recompute_group_advancement(
         for pos, entry in enumerate(ranked):
             pos_counts[entry["team"]][pos] += 1
             if pos < 2:
-                advance_counts[entry["team"]] += 1
+                advance_counts[entry["team"]] += 1  # 1st/2nd always advance
 
         third_team = ranked[2]["team"]
         third_counts[third_team] += 1
         new_third_entry = ranked[2].copy()
         new_third_entry["group_letter"] = letter
 
-        # Cross-join: other 11 groups from cache + this group's new 3rd-place entry
         cached_others = [e for e in third_entry_cache[sim_i] if e["group_letter"] != letter]
-        all_12 = cached_others + [new_third_entry]
+        for e in cached_others:
+            third_counts[e["team"]] += 1  # track how often each other team finishes 3rd
 
+        all_12 = cached_others + [new_third_entry]
         advancing_8, _ = select_third_place(all_12)
         advancing_set = {t["team"] for t in advancing_8}
 
-        if third_team in advancing_set:
-            advance_counts[third_team] += 1
+        # Count 3rd-place advancements for all teams (selected group 3rd + other groups' 3rds)
+        for t in advancing_set:
+            advance_counts[t] += 1
 
         try:
             third_assignments = assign_third_place(advancing_8, {})
             for slot_id, team in third_assignments.items():
-                if team in slot_counts:
-                    slot_counts[team][slot_id] = slot_counts[team].get(slot_id, 0) + 1
+                slot_counts[team][slot_id] = slot_counts[team].get(slot_id, 0) + 1
         except Exception:
             pass
 
     result = {}
-    for team in teams:
-        tc = third_counts[team]
-        adv = advance_counts[team]
-        result[team] = {
-            "pos": {
-                "1st": pos_counts[team][0] / n,
-                "2nd": pos_counts[team][1] / n,
-                "3rd": pos_counts[team][2] / n,
-                "4th": pos_counts[team][3] / n,
-            },
-            "advance": adv / n,
-            "third_advance": (adv - pos_counts[team][0] - pos_counts[team][1]) / tc if tc > 0 else 0.0,
-            "r32_slots": {
-                str(sid): cnt / n
-                for sid, cnt in slot_counts[team].items()
-            },
-        }
+    for grp, grp_teams in GROUPS.items():
+        for team in grp_teams:
+            tc = third_counts[team]
+            sc = slot_counts[team]
+            r32 = {str(sid): cnt / n for sid, cnt in sc.items()}
+            if grp == letter:
+                # Fully recomputed: advance_counts already includes 1st+2nd+3rd_adv
+                adv_total = advance_counts[team]
+                p1 = pos_counts[team][0] / n
+                p2 = pos_counts[team][1] / n
+                result[team] = {
+                    "pos": {
+                        "1st": p1,
+                        "2nd": p2,
+                        "3rd": pos_counts[team][2] / n,
+                        "4th": pos_counts[team][3] / n,
+                    },
+                    "advance": adv_total / n,
+                    "third_advance": (adv_total / n - p1 - p2) / (pos_counts[team][2] / n)
+                        if pos_counts[team][2] > 0 else 0.0,
+                    "r32_slots": r32,
+                }
+            else:
+                # Cached pos probs; advance_counts[team] only counts 3rd-place advances
+                cached_pos = baseline_adv[team]["pos"]
+                p1 = cached_pos["1st"]
+                p2 = cached_pos["2nd"]
+                p3_adv = advance_counts[team] / n
+                result[team] = {
+                    "pos": cached_pos,
+                    "advance": p1 + p2 + p3_adv,
+                    "third_advance": (p3_adv / cached_pos["3rd"]) if cached_pos["3rd"] > 0 else 0.0,
+                    "r32_slots": r32,
+                }
     return result
 
 

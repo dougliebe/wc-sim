@@ -94,13 +94,23 @@ def api_simulate(letter: str):
 
     # Resimulate only this group; cross-join with cached 3rd-place entries from
     # the other 11 groups to compute advancement probs correctly without a full re-run.
-    adv = recompute_group_advancement(letter, group_known, ELOS, _third_entry_cache, n=20_000)
+    # Returns updated adv for all 48 teams (other groups' pos probs are unchanged but
+    # their 3rd-place advancement probs shift because the pool composition changed).
+    adv_all = recompute_group_advancement(
+        letter, group_known, ELOS, _third_entry_cache, _adv_cache, n=20_000
+    )
 
     ranked, reasons = resolve_with_scores(letter, group_known)
     standings = current_standings(letter, group_known)
 
+    # Build per-group adv snapshot for the overview cards
+    group_adv_overview = {}
+    for grp, grp_teams in GROUPS.items():
+        group_adv_overview[grp] = {t: adv_all[t] for t in grp_teams}
+
     return jsonify({
-        "adv": adv,
+        "adv": adv_all,  # full 48-team dict for selected group display
+        "group_adv_overview": group_adv_overview,  # keyed by group letter for card updates
         "ranked": ranked,
         "tiebreak_reasons": reasons,
         "standings": standings,
