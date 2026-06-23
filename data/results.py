@@ -1,7 +1,6 @@
 # Completed match scorelines: {(team_a, team_b): (goals_a, goals_b)}
 # Add results here as matches are played. Team names must match src/groups.py exactly.
-# Last updated: June 21, 2026 (through matchday 2 of Groups A-F, matchday 1 of Groups G-L,
-# and matchday 2 of Group H match 1)
+# Last updated: June 22, 2026 (through matchday 2 of Groups G-J)
 RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     # --- Group A ---
     ("Mexico", "South Africa"):     (2, 0),  # Jun 11
@@ -39,22 +38,29 @@ RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     ("Netherlands", "Sweden"):      (5, 1),  # Jun 20
     ("Japan", "Tunisia"):           (4, 0),  # Jun 20
 
-    # --- Group G (matchday 1 only; matchday 2 on Jun 21 not yet confirmed) ---
+    # --- Group G ---
     ("Belgium", "Egypt"):           (1, 1),  # Jun 15
     ("Iran", "New Zealand"):        (2, 2),  # Jun 16
+    ("Belgium", "Iran"):            (0, 0),  # Jun 21
+    ("Egypt", "New Zealand"):       (3, 1),  # Jun 21
 
-    # --- Group H (matchday 1 + Spain vs Saudi Arabia) ---
+    # --- Group H ---
     ("Spain", "Cabo Verde"):        (0, 0),  # Jun 15
     ("Saudi Arabia", "Uruguay"):    (1, 1),  # Jun 15
     ("Spain", "Saudi Arabia"):      (4, 0),  # Jun 21
+    ("Uruguay", "Cabo Verde"):      (2, 2),  # Jun 21
 
-    # --- Group I (matchday 1 only; matchday 2 on Jun 22) ---
+    # --- Group I ---
     ("France", "Senegal"):          (3, 1),  # Jun 16
     ("Norway", "Iraq"):             (4, 1),  # Jun 16
+    ("France", "Iraq"):             (3, 0),  # Jun 22
+    ("Norway", "Senegal"):          (4, 1),  # Jun 22
 
-    # --- Group J (matchday 1 only; matchday 2 on Jun 22) ---
+    # --- Group J ---
     ("Argentina", "Algeria"):       (3, 0),  # Jun 16
     ("Austria", "Jordan"):          (3, 1),  # Jun 17
+    ("Argentina", "Austria"):       (2, 0),  # Jun 22
+    ("Jordan", "Algeria"):          (1, 0),  # Jun 22
 
     # --- Group K (matchday 1 only; matchday 2 on Jun 23) ---
     ("Portugal", "Congo DR"):       (1, 1),  # Jun 17
