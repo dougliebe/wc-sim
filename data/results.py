@@ -54,13 +54,13 @@ RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     ("France", "Senegal"):          (3, 1),  # Jun 16
     ("Norway", "Iraq"):             (4, 1),  # Jun 16
     ("France", "Iraq"):             (3, 0),  # Jun 22
-    ("Norway", "Senegal"):          (4, 1),  # Jun 22
+    ("Norway", "Senegal"):          (3, 2),  # Jun 22
 
     # --- Group J ---
     ("Argentina", "Algeria"):       (3, 0),  # Jun 16
     ("Austria", "Jordan"):          (3, 1),  # Jun 17
     ("Argentina", "Austria"):       (2, 0),  # Jun 22
-    ("Jordan", "Algeria"):          (1, 0),  # Jun 22
+    ("Jordan", "Algeria"):          (1, 2),  # Jun 22
 
     # --- Group K (matchday 1 only; matchday 2 on Jun 23) ---
     ("Portugal", "Congo DR"):       (1, 1),  # Jun 17
