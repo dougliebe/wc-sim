@@ -37,6 +37,8 @@ RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     ("Cote d'Ivoire", "Ecuador"):   (1, 0),  # Jun 14
     ("Germany", "Cote d'Ivoire"):   (2, 1),  # Jun 20
     ("Ecuador", "Curacao"):         (0, 0),  # Jun 20
+    ("Ecuador", "Germany"):         (2, 1),  # Jun 25
+    ("Cote d'Ivoire", "Curacao"):   (2, 0),  # Jun 25
 
     # --- Group F ---
     ("Netherlands", "Japan"):       (2, 2),  # Jun 14
