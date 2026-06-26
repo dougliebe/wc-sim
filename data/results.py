@@ -31,6 +31,8 @@ RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     ("Australia", "Turkey"):        (2, 0),  # Jun 13
     ("United States", "Australia"): (2, 0),  # Jun 19
     ("Turkey", "Paraguay"):         (0, 1),  # Jun 19
+    ("Turkey", "United States"):    (3, 2),  # Jun 25
+    ("Paraguay", "Australia"):      (0, 0),  # Jun 25
 
     # --- Group E ---
     ("Germany", "Curacao"):         (7, 1),  # Jun 14
@@ -45,6 +47,8 @@ RESULTS: dict[tuple[str, str], tuple[int, int]] = {
     ("Sweden", "Tunisia"):          (5, 1),  # Jun 14
     ("Netherlands", "Sweden"):      (5, 1),  # Jun 20
     ("Japan", "Tunisia"):           (4, 0),  # Jun 20
+    ("Tunisia", "Netherlands"):     (1, 3),  # Jun 25
+    ("Japan", "Sweden"):            (1, 1),  # Jun 25
 
     # --- Group G ---
     ("Belgium", "Egypt"):           (1, 1),  # Jun 15
